@@ -2,31 +2,110 @@ package com.tarasantoshchuk.exoplayerlist
 
 import android.content.Context
 import android.graphics.Rect
-import android.util.Log
 import android.view.View
-import androidx.annotation.CallSuper
 import androidx.core.view.forEach
 import androidx.recyclerview.widget.RecyclerView
+import androidx.recyclerview.widget.RecyclerView.ViewHolder
 import com.google.android.exoplayer2.ExoPlayer
 import com.google.android.exoplayer2.Player
 import com.google.android.exoplayer2.source.MediaSource
 
-abstract class ExoPlayerAdapter<P: ExoPlayer, VH : ExoPlayerAdapter.ViewHolder<P>>(val context: Context, val config: Config<P>) :
+abstract class ExoPlayerAdapter<P : ExoPlayer, VH : ViewHolder>(val config: Config<P, VH>) :
     RecyclerView.Adapter<VH>() {
 
-    data class Config<P: Player>(
-        val pausePlaybackOnScroll: Boolean = false,
-        val minVisibilityToContinuePlayback: Int = 30,
-        val playerProvider: (RecyclerView) -> P
-    )
+    @JvmOverloads
+    constructor(
+        playerConfig: PlayerConfig<P>,
+        playbackConfig: PlaybackConfig<P, VH>,
+        fullscreenConfig: FullscreenConfig<P, VH> = FullscreenConfig.unsupported(),
+        scrollConfig: ScrollConfig<VH> = ScrollConfig.default()
+    ) : this(ConcreteConfig<P, VH>(playerConfig, playbackConfig, fullscreenConfig, scrollConfig))
+
+    interface Config<P : Player, VH : ViewHolder> :
+            PlaybackConfig<P, VH>,
+            FullscreenConfig<P, VH>,
+            PlayerConfig<P>,
+            ScrollConfig<VH>
+
+    interface PlaybackConfig<P : Player, VH : ViewHolder> {
+        fun onPlaybackGained(player: P, viewHolder: VH)
+        fun onPlaybackLost(player: P, viewHolder: VH)
+        fun onSwitchPlayback(player: P, viewHolder: VH, newViewHolder: VH) {
+            onPlaybackLost(player, viewHolder)
+            onPlaybackGained(player, newViewHolder)
+        }
+    }
+
+    interface FullscreenConfig<P : Player, VH : ViewHolder> {
+        private object UNSUPPORTED : FullscreenConfig<Player, ViewHolder> {
+            override fun onTransitionToFullScreen(player: Player, viewHolder: ViewHolder) {
+                throw UnsupportedOperationException("Fullscreen functionality is not supported")
+            }
+
+            override fun onTransitionFromFullScreen(player: Player, viewHolder: ViewHolder) {
+                throw UnsupportedOperationException("Fullscreen functionality is not supported")
+            }
+        }
+
+        companion object {
+            @Suppress("UNCHECKED_CAST")
+            fun <P: Player, VH: ViewHolder> unsupported(): FullscreenConfig<P, VH> {
+                return UNSUPPORTED as FullscreenConfig<P, VH>
+            }
+        }
+
+        fun onTransitionToFullScreen(player: P, viewHolder: VH)
+        fun onTransitionFromFullScreen(player: P, viewHolder: VH)
+    }
+
+    interface PlayerConfig<P : Player> {
+        fun createPlayer(context: Context): P
+
+        fun init(context: Context) {}
+        fun createMediaSource(position: Int): MediaSource
+        fun release() {}
+    }
+
+    interface ScrollConfig<VH : ViewHolder> {
+        private object DEFAULT : ScrollConfig<ViewHolder> {
+            override fun getVisibilityPercent(viewHolder: ViewHolder): Float {
+                return viewHolder.itemView.getVisibilityPercent()
+            }
+
+            override fun minVisibilityToContinuePlayback(): Float {
+                return 50f
+            }
+        }
+
+        companion object {
+            @Suppress("UNCHECKED_CAST")
+            fun <VH: ViewHolder> default(): ScrollConfig<VH> {
+                return DEFAULT as ScrollConfig<VH>
+            }
+        }
+
+        fun getVisibilityPercent(viewHolder: VH): Float
+        fun pausePlaybackOnScroll() = true
+        fun minVisibilityToContinuePlayback(): Float
+    }
+
+    private class ConcreteConfig<P : Player, VH : ViewHolder>(
+        private val playerConfig: PlayerConfig<P>,
+        private val playbackConfig: PlaybackConfig<P, VH>,
+        private val fullscreenConfig: FullscreenConfig<P, VH>,
+        private val scrollConfig: ScrollConfig<VH>) :
+
+        PlayerConfig<P> by playerConfig,
+        PlaybackConfig<P, VH> by playbackConfig,
+        FullscreenConfig<P, VH> by fullscreenConfig,
+        ScrollConfig<VH> by scrollConfig,
+        Config<P, VH>
+
 
     private lateinit var player: P
     private var playbackHolder: VH? = null
     private var nextPlaybackHolder: VH? = null
     private var fullScreenViewHolder: VH? = null
-
-    //todo - use
-    private lateinit var recyclerView: RecyclerView
 
     private val switchPlayback = Runnable {
         switchPlayback(nextPlaybackHolder!!)
@@ -35,7 +114,7 @@ abstract class ExoPlayerAdapter<P: ExoPlayer, VH : ExoPlayerAdapter.ViewHolder<P
     override fun onAttachedToRecyclerView(recyclerView: RecyclerView) {
         super.onAttachedToRecyclerView(recyclerView)
 
-        player = config.playerProvider(recyclerView)
+        player = config.createPlayer(recyclerView.context)
 
         recyclerView.addOnScrollListener(object : RecyclerView.OnScrollListener() {
             @Suppress("UNCHECKED_CAST")
@@ -45,25 +124,25 @@ abstract class ExoPlayerAdapter<P: ExoPlayer, VH : ExoPlayerAdapter.ViewHolder<P
                 var newPlaybackHolder: VH? = null
                 var maxVisibilityPercent = 0f
 
-                recyclerView.forEach {
-                    val viewHolder = recyclerView.getChildViewHolder(it) as VH
+                recyclerView.forEach { view ->
+                    val viewHolder = recyclerView.getChildViewHolder(view) as VH
 
-                    if (maxVisibilityPercent < viewHolder.getVisibilityPercent()) {
-                        newPlaybackHolder = viewHolder
-                        maxVisibilityPercent = viewHolder.getVisibilityPercent()
-                    }
+                    config.getVisibilityPercent(viewHolder)
+                        .takeIf { it > maxVisibilityPercent }
+                        ?.let {
+                            newPlaybackHolder = viewHolder
+                            maxVisibilityPercent = it
+                        }
                 }
 
                 stopCurrentPlayback()
                 scheduleNextPlayback(newPlaybackHolder, recyclerView)
-
-                Log.v("AEROL", "onScrolled")
             }
 
             override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
                 super.onScrollStateChanged(recyclerView, newState)
 
-                if (config.pausePlaybackOnScroll) {
+                if (config.pausePlaybackOnScroll()) {
                     player.playWhenReady = newState == RecyclerView.SCROLL_STATE_IDLE
                 }
 
@@ -71,8 +150,6 @@ abstract class ExoPlayerAdapter<P: ExoPlayer, VH : ExoPlayerAdapter.ViewHolder<P
                     cancelSwitchPlayback(recyclerView)
                     switchPlayback.run()
                 }
-
-                Log.v("AEROL", "onScrollStateChanged")
             }
         })
     }
@@ -81,18 +158,18 @@ abstract class ExoPlayerAdapter<P: ExoPlayer, VH : ExoPlayerAdapter.ViewHolder<P
         return fullScreenViewHolder != null
     }
 
-    fun enterFullScreen(viewHolder: VH = playbackHolder!!, onTransitionToFullScreen: (Player, VH) -> Unit) {
+    fun enterFullScreen(viewHolder: VH = playbackHolder!!) {
         fullScreenViewHolder = viewHolder
 
         if (playbackHolder != viewHolder) {
             switchPlayback(viewHolder)
         }
 
-        onTransitionToFullScreen(player, fullScreenViewHolder!!)
+        config.onTransitionToFullScreen(player, fullScreenViewHolder!!)
     }
 
-    fun exitFullScreen(onTransitionFromFullScreen: (Player, VH) -> Unit) {
-        onTransitionFromFullScreen(player, fullScreenViewHolder!!)
+    fun exitFullScreen() {
+        config.onTransitionFromFullScreen(player, fullScreenViewHolder!!)
 
         fullScreenViewHolder = null
     }
@@ -105,9 +182,9 @@ abstract class ExoPlayerAdapter<P: ExoPlayer, VH : ExoPlayerAdapter.ViewHolder<P
     }
 
     private fun stopCurrentPlayback() {
-        playbackHolder?.apply {
-            if (getVisibilityPercent() < config.minVisibilityToContinuePlayback) {
-                detachUiFromPlayer(player)
+        playbackHolder?.let {
+            if (config.getVisibilityPercent(it) < config.minVisibilityToContinuePlayback()) {
+                config.onPlaybackLost(player, it)
                 playbackHolder = null
             }
         }
@@ -123,7 +200,7 @@ abstract class ExoPlayerAdapter<P: ExoPlayer, VH : ExoPlayerAdapter.ViewHolder<P
 
         cancelSwitchPlayback(recyclerView)
 
-        playbackHolder?.detachUiFromPlayer(player)
+        playbackHolder?.let { config.onPlaybackLost(player, it) }
 
         player.release()
     }
@@ -137,50 +214,19 @@ abstract class ExoPlayerAdapter<P: ExoPlayer, VH : ExoPlayerAdapter.ViewHolder<P
     }
 
     private fun switchPlayback(newPlaybackHolder: VH) {
-        player.prepare(newPlaybackHolder.getMediaSource())
+        player.prepare(config.createMediaSource(newPlaybackHolder.adapterPosition))
 
         playbackHolder.let {
 
             if (it == null) {
-                newPlaybackHolder.attachUiToPlayer(player)
+                config.onPlaybackGained(player, newPlaybackHolder)
                 player.playWhenReady = true
             } else {
-                newPlaybackHolder.switchPlayerUi(player, it)
+                config.onSwitchPlayback(player, it, newPlaybackHolder)
             }
         }
 
         playbackHolder = newPlaybackHolder
-    }
-
-    abstract class ViewHolder<P: Player>(itemView: View) : RecyclerView.ViewHolder(itemView) {
-
-        @CallSuper
-        open fun attachUiToPlayer(player: P) {
-            onPlaybackGained(player)
-        }
-
-        @CallSuper
-        open fun detachUiFromPlayer(player: P) {
-            onPlaybackLost(player)
-        }
-
-        open fun onPlaybackGained(player: P) {
-        }
-
-        open fun onPlaybackLost(player: P) {
-        }
-
-        open fun switchPlayerUi(player: P, previousPlaybackHolder: ViewHolder<P>) {
-            previousPlaybackHolder.detachUiFromPlayer(player)
-            attachUiToPlayer(player)
-        }
-
-        abstract fun getMediaSource(): MediaSource
-
-
-        open fun getVisibilityPercent(): Float {
-            return itemView.getVisibilityPercent()
-        }
     }
 }
 

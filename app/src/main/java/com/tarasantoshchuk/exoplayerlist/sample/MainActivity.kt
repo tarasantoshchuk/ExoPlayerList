@@ -1,24 +1,23 @@
 package com.tarasantoshchuk.exoplayerlist.sample
 
 import android.animation.Animator
-import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
 import android.view.View
+import android.view.ViewGroup
 import android.view.ViewPropertyAnimator
-import android.widget.ViewAnimator
+import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.exoplayer2.ui.PlayerView
-import android.view.ViewGroup
-
+import com.tarasantoshchuk.exoplayerlist.playback_config.PlayerViewConfig
 
 
 class MainActivity : AppCompatActivity() {
     private val adapter: Adapter by lazy {
-        Adapter(this)
+        Adapter(MyPlayerConfig(), PlayerViewConfig(), MyFullscreenConfig(fullscreenPlayer))
     }
 
-    private val playerView: PlayerView by lazy {
+    private val fullscreenPlayer: PlayerView by lazy {
         findViewById<PlayerView>(R.id.fullscreen_player)
     }
 
@@ -34,50 +33,61 @@ class MainActivity : AppCompatActivity() {
 
         findViewById<View>(R.id.toggle_fullscreen).setOnClickListener {
             if (!adapter.isFullscreen()) {
-                adapter.enterFullScreen { player, oldHolder ->
-                    PlayerView.switchTargetView(player, oldHolder.playerUI, playerView)
-
-                    oldHolder.playerUI.run {
-                        disableClipOnParents()
-                        animateToMatch(playerView).setListener(object : Animator.AnimatorListener {
-                            override fun onAnimationRepeat(animation: Animator?) {
-                            }
-
-                            override fun onAnimationCancel(animation: Animator?) {
-                            }
-
-                            override fun onAnimationStart(animation: Animator?) {
-                            }
-
-                            override fun onAnimationEnd(animation: Animator?) {
-                                playerView.visibility = View.VISIBLE
-                            }
-                        })
-                            .start()
-                    }
-                }
+                adapter.enterFullScreen()
             }
         }
     }
 
     override fun onBackPressed() {
         if (adapter.isFullscreen()) {
-            adapter.exitFullScreen { player, newHolder ->
-                playerView.visibility = View.INVISIBLE
-                PlayerView.switchTargetView(player, playerView, newHolder.playerUI)
-            }
+            adapter.exitFullScreen()
         } else {
             super.onBackPressed()
         }
     }
 }
 
-fun View.animateToMatch(other: View): ViewPropertyAnimator {
+fun View.fadeIn(): ViewPropertyAnimator {
     return animate()
-        .xBy(other.pivotX - pivotX)
-        .yBy(other.pivotY - pivotY)
-        .scaleX(other.width.toFloat() / width.toFloat())
-        .scaleY(other.height.toFloat() / height.toFloat())
+        .alpha(1f)
+        .setListener(object : Animator.AnimatorListener {
+            override fun onAnimationRepeat(animation: Animator?) {
+            }
+
+            override fun onAnimationEnd(animation: Animator?) {
+            }
+
+            override fun onAnimationCancel(animation: Animator?) {
+            }
+
+            override fun onAnimationStart(animation: Animator?) {
+                alpha = 0f
+                visibility = View.VISIBLE
+            }
+
+        })
+}
+
+fun View.fadeOut(): ViewPropertyAnimator {
+    return animate()
+        .alpha(0f)
+        .setListener(object : Animator.AnimatorListener {
+            override fun onAnimationRepeat(animation: Animator?) {
+
+            }
+
+            override fun onAnimationEnd(animation: Animator?) {
+                visibility = View.INVISIBLE
+            }
+
+            override fun onAnimationCancel(animation: Animator?) {
+            }
+
+            override fun onAnimationStart(animation: Animator?) {
+                alpha = 1f
+            }
+
+        })
 }
 
 fun View.disableClipOnParents() {
