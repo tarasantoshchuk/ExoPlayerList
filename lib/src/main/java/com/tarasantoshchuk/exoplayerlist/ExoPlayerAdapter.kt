@@ -107,6 +107,16 @@ abstract class ExoPlayerAdapter<P : ExoPlayer, VH : ViewHolder>(val config: Conf
     private var nextPlaybackHolder: VH? = null
     private var fullScreenViewHolder: VH? = null
 
+    private val recyclerViewAttachListener = object : View.OnAttachStateChangeListener {
+        override fun onViewDetachedFromWindow(v: View) {
+            onRecyclerViewDetachedFromWindow(v as RecyclerView)
+        }
+
+        override fun onViewAttachedToWindow(v: View) {
+            onRecyclerViewAttachedToWindow(v as RecyclerView)
+        }
+    }
+
     private val switchPlayback = Runnable {
         switchPlayback(nextPlaybackHolder!!)
     }
@@ -114,6 +124,17 @@ abstract class ExoPlayerAdapter<P : ExoPlayer, VH : ViewHolder>(val config: Conf
     override fun onAttachedToRecyclerView(recyclerView: RecyclerView) {
         super.onAttachedToRecyclerView(recyclerView)
 
+        recyclerView.addOnAttachStateChangeListener(recyclerViewAttachListener)
+    }
+
+    override fun onDetachedFromRecyclerView(recyclerView: RecyclerView) {
+        super.onDetachedFromRecyclerView(recyclerView)
+
+        recyclerView.removeOnAttachStateChangeListener(recyclerViewAttachListener)
+    }
+
+    fun onRecyclerViewAttachedToWindow(recyclerView: RecyclerView) {
+        config.init(recyclerView.context)
         player = config.createPlayer(recyclerView.context)
 
         recyclerView.addOnScrollListener(object : RecyclerView.OnScrollListener() {
@@ -152,6 +173,15 @@ abstract class ExoPlayerAdapter<P : ExoPlayer, VH : ViewHolder>(val config: Conf
                 }
             }
         })
+    }
+
+    fun onRecyclerViewDetachedFromWindow(recyclerView: RecyclerView) {
+        cancelSwitchPlayback(recyclerView)
+
+        playbackHolder?.let { config.onPlaybackLost(player, it) }
+
+        player.release()
+        config.release()
     }
 
     fun isFullscreen(): Boolean {
@@ -193,16 +223,6 @@ abstract class ExoPlayerAdapter<P : ExoPlayer, VH : ViewHolder>(val config: Conf
     private fun rescheduleSwitchPlayback(recyclerView: RecyclerView) {
         cancelSwitchPlayback(recyclerView)
         scheduleSwitchPlayback(recyclerView)
-    }
-
-    override fun onDetachedFromRecyclerView(recyclerView: RecyclerView) {
-        super.onDetachedFromRecyclerView(recyclerView)
-
-        cancelSwitchPlayback(recyclerView)
-
-        playbackHolder?.let { config.onPlaybackLost(player, it) }
-
-        player.release()
     }
 
     private fun cancelSwitchPlayback(recyclerView: RecyclerView) {

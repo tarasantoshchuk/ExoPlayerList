@@ -7,28 +7,22 @@ import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.exoplayer2.SimpleExoPlayer
 import com.google.android.exoplayer2.ui.PlayerView
-import com.google.android.exoplayer2.upstream.cache.SimpleCache
 import com.tarasantoshchuk.exoplayerlist.ExoPlayerAdapter
 import com.tarasantoshchuk.exoplayerlist.ViewProvider
 
-class Adapter : ExoPlayerAdapter<SimpleExoPlayer, Adapter.TestViewHolder> {
-    constructor(
-        playerConfig: PlayerConfig<SimpleExoPlayer>,
-        playbackConfig: PlaybackConfig<SimpleExoPlayer, TestViewHolder>,
-        fullscreenConfig: FullscreenConfig<SimpleExoPlayer, TestViewHolder>,
-        scrollConfig: ScrollConfig<TestViewHolder> = ScrollConfig.default()
-    ) : super(
-        playerConfig,
-        playbackConfig,
-        fullscreenConfig,
-        scrollConfig
-    )
-
-    constructor(config: Config<SimpleExoPlayer, TestViewHolder>) : super(config)
+class Adapter(
+    playerConfig: PlayerConfig<SimpleExoPlayer>,
+    playbackConfig: PlaybackConfig<SimpleExoPlayer, TestViewHolder>,
+    fullscreenConfig: FullscreenConfig<SimpleExoPlayer, TestViewHolder>,
+    scrollConfig: ScrollConfig<TestViewHolder> = ScrollConfig.default()
+) : ExoPlayerAdapter<SimpleExoPlayer, Adapter.TestViewHolder>(
+    playerConfig,
+    playbackConfig,
+    fullscreenConfig,
+    scrollConfig
+) {
 
     private lateinit var recyclerView: RecyclerView
-
-    private lateinit var simpleCache: SimpleCache
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): TestViewHolder {
         return TestViewHolder(LayoutInflater.from(parent.context).inflate(R.layout.list_item, parent, false))
@@ -46,16 +40,7 @@ class Adapter : ExoPlayerAdapter<SimpleExoPlayer, Adapter.TestViewHolder> {
         super.onAttachedToRecyclerView(recyclerView)
 
         this.recyclerView = recyclerView
-
-        config.init(recyclerView.context)
     }
-
-    override fun onDetachedFromRecyclerView(recyclerView: RecyclerView) {
-        super.onDetachedFromRecyclerView(recyclerView)
-
-        config.release()
-    }
-
 
     inner class TestViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView), ViewProvider<PlayerView> {
         override fun playerView(): PlayerView {
